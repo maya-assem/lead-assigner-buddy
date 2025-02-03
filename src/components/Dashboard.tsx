@@ -66,23 +66,22 @@ export const Dashboard = () => {
 
   const selectAgentByAvailability = (activeAgents: Agent[]) => {
     console.log('⚖️ Selecting agent based on current workload...');
-    const agentLeadCounts = new Map<string, number>();
+    const agentDealsCount = new Map<string, number>();
     
-    // Count all assignments, including historical ones from Bitrix
     activeAgents.forEach(agent => {
-      const currentAssignments = assignments.filter(a => a.agentId === agent.ID).length;
+      const currentDeals = assignments.filter(a => a.agentId === agent.ID).length;
       const metrics = getAgentMetrics(agent.ID);
-      const historicalLeads = metrics?.total_leads || 0;
-      const totalLeads = currentAssignments + historicalLeads;
-      agentLeadCounts.set(agent.ID, totalLeads);
-      console.log(`Agent ${agent.NAME}: Current=${currentAssignments}, Historical=${historicalLeads}, Total=${totalLeads}`);
+      const historicalDeals = metrics?.total_leads || 0;
+      const totalDeals = currentDeals + historicalDeals;
+      agentDealsCount.set(agent.ID, totalDeals);
+      console.log(`Agent ${agent.NAME}: Current Deals=${currentDeals}, Historical=${historicalDeals}, Total=${totalDeals}`);
     });
 
     const selectedAgent = activeAgents.sort((a, b) => 
-      (agentLeadCounts.get(a.ID) || 0) - (agentLeadCounts.get(b.ID) || 0)
+      (agentDealsCount.get(a.ID) || 0) - (agentDealsCount.get(b.ID) || 0)
     )[0];
 
-    console.log(`🎯 Selected agent by availability: ${selectedAgent?.NAME || 'None'}`);
+    console.log(`🎯 Selected agent by workload: ${selectedAgent?.NAME || 'None'}`);
     return selectedAgent;
   };
 
@@ -140,19 +139,12 @@ export const Dashboard = () => {
     assignLeads();
   }, [leads, agents, addAssignment, assignments, toast, usePerformanceBased]);
 
-  useEffect(() => {
-    const updateMetrics = async () => {
-      agents.forEach(agent => {
-        updateAgentMetrics(agent.ID, {
-          conversion_rate: Math.random() * 100, // Example: Random conversion rate
-          avg_deal_value: Math.random() * 10000, // Example: Random deal value
-          response_time: Math.random() * 100, // Example: Random response time
-        });
-      });
-    };
-
-    updateMetrics();
-  }, [agents]);
+  // Sort agents by total deals count
+  const sortedAgents = [...agents].filter(agent => agent.ACTIVE).sort((a, b) => {
+    const aDeals = assignments.filter(assign => assign.agentId === a.ID).length + (getAgentMetrics(a.ID)?.total_leads || 0);
+    const bDeals = assignments.filter(assign => assign.agentId === b.ID).length + (getAgentMetrics(b.ID)?.total_leads || 0);
+    return bDeals - aDeals;
+  });
 
   return (
     <div className="container mx-auto p-6">
@@ -160,13 +152,13 @@ export const Dashboard = () => {
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Active Agents</h2>
+          <h2 className="text-xl font-semibold mb-4">Active Agents (Sorted by Deal Count)</h2>
           <ScrollArea className="h-[200px]">
-            {agents.filter(agent => agent.ACTIVE).map((agent) => {
+            {sortedAgents.map((agent) => {
               const metrics = getAgentMetrics(agent.ID);
-              const currentAssignments = assignments.filter(a => a.agentId === agent.ID).length;
-              const historicalLeads = metrics?.total_leads || 0;
-              const totalLeads = currentAssignments + historicalLeads;
+              const currentDeals = assignments.filter(a => a.agentId === agent.ID).length;
+              const historicalDeals = metrics?.total_leads || 0;
+              const totalDeals = currentDeals + historicalDeals;
               
               return (
                 <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
@@ -174,12 +166,12 @@ export const Dashboard = () => {
                     <span>{agent.NAME} {agent.LAST_NAME}</span>
                     {metrics && (
                       <div className="text-xs text-muted-foreground">
-                        Performance Score: {metrics.performance_score.toFixed(2)}
+                        Performance Score: {metrics.performance_score?.toFixed(2)}
                       </div>
                     )}
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {totalLeads} leads total
+                    {totalDeals} deals total
                   </span>
                 </div>
               );
