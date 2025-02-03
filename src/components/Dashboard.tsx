@@ -5,11 +5,13 @@ import { useAssignmentStore } from '../stores/assignmentStore';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
+import { recordAssignment, getAgentMetrics, updateAgentMetrics } from '../services/database';
 
 export const Dashboard = () => {
   const { toast } = useToast();
   const addAssignment = useAssignmentStore((state) => state.addAssignment);
   const assignments = useAssignmentStore((state) => state.assignments);
+  const [usePerformanceBased, setUsePerformanceBased] = useState(false);
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
@@ -23,51 +25,108 @@ export const Dashboard = () => {
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
+  const selectAgentByPerformance = (activeAgents: Agent[]) => {
+    const agentScores = activeAgents.map(agent => {
+      const metrics = getAgentMetrics(agent.ID);
+      return {
+        agent,
+        score: metrics?.performance_score || 0
+      };
+    });
+
+    // Sort by performance score and current workload
+    return agentScores.sort((a, b) => {
+      const aWorkload = assignments.filter(assign => assign.agentId === a.agent.ID).length;
+      const bWorkload = assignments.filter(assign => assign.agentId === b.agent.ID).length;
+      
+      // Combine performance score with workload consideration
+      const aScore = a.score - (aWorkload * 10); // Penalty for each assigned lead
+      const bScore = b.score - (bWorkload * 10);
+      
+      return bScore - aScore;
+    })[0]?.agent;
+  };
+
+  const selectAgentByAvailability = (activeAgents: Agent[]) => {
+    const agentLeadCounts = new Map<string, number>();
+    assignments.forEach(assignment => {
+      agentLeadCounts.set(
+        assignment.agentId,
+        (agentLeadCounts.get(assignment.agentId) || 0) + 1
+      );
+    });
+
+    return activeAgents.sort((a, b) => 
+      (agentLeadCounts.get(a.ID) || 0) - (agentLeadCounts.get(b.ID) || 0)
+    )[0];
+  };
+
   useEffect(() => {
     const assignLeads = async () => {
       const newLeads = leads.filter(lead => !lead.ASSIGNED_BY_ID);
       
       if (newLeads.length && agents.length) {
-        // Get agent with least leads
-        const agentLeadCounts = new Map<string, number>();
-        assignments.forEach(assignment => {
-          agentLeadCounts.set(
-            assignment.agentId,
-            (agentLeadCounts.get(assignment.agentId) || 0) + 1
-          );
-        });
-
         const activeAgents = agents.filter(agent => agent.ACTIVE);
-        const sortedAgents = activeAgents.sort((a, b) => 
-          (agentLeadCounts.get(a.ID) || 0) - (agentLeadCounts.get(b.ID) || 0)
-        );
+        
+        if (activeAgents.length > 0) {
+          // Alternate between performance-based and availability-based assignment
+          const selectedAgent = usePerformanceBased
+            ? selectAgentByPerformance(activeAgents)
+            : selectAgentByAvailability(activeAgents);
 
-        if (sortedAgents.length > 0) {
-          const selectedAgent = sortedAgents[0];
-          
-          for (const lead of newLeads) {
-            try {
-              await bitrixApi.assignLead(lead.ID, selectedAgent.ID);
-              addAssignment(lead, selectedAgent);
-              toast({
-                title: "Lead Assigned",
-                description: `${lead.TITLE} assigned to ${selectedAgent.NAME} ${selectedAgent.LAST_NAME}`,
-              });
-            } catch (error) {
-              console.error('Failed to assign lead:', error);
-              toast({
-                title: "Assignment Failed",
-                description: "Failed to assign lead. Please try again.",
-                variant: "destructive",
-              });
+          if (selectedAgent) {
+            for (const lead of newLeads) {
+              try {
+                await bitrixApi.assignLead(lead.ID, selectedAgent.ID);
+                addAssignment(lead, selectedAgent);
+                
+                // Record assignment in SQLite
+                await recordAssignment(
+                  lead.ID,
+                  lead.TITLE,
+                  selectedAgent.ID,
+                  `${selectedAgent.NAME} ${selectedAgent.LAST_NAME}`,
+                  usePerformanceBased ? 'performance' : 'availability'
+                );
+
+                toast({
+                  title: "Lead Assigned",
+                  description: `${lead.TITLE} assigned to ${selectedAgent.NAME} ${selectedAgent.LAST_NAME} (${usePerformanceBased ? 'Performance' : 'Availability'} based)`,
+                });
+              } catch (error) {
+                console.error('Failed to assign lead:', error);
+                toast({
+                  title: "Assignment Failed",
+                  description: "Failed to assign lead. Please try again.",
+                  variant: "destructive",
+                });
+              }
             }
           }
+          
+          // Toggle assignment method for next round
+          setUsePerformanceBased(prev => !prev);
         }
       }
     };
 
     assignLeads();
-  }, [leads, agents, addAssignment, assignments, toast]);
+  }, [leads, agents, addAssignment, assignments, toast, usePerformanceBased]);
+
+  // Simulate updating agent metrics (in real implementation, this would come from Bitrix CRM)
+  useEffect(() => {
+    const updateMetrics = async () => {
+      agents.forEach(agent => {
+        updateAgentMetrics(agent.ID, {
+          conversion_rate: Math.random() * 100, // Example: Random conversion rate
+          avg_deal_value: Math.random() * 10000, // Example: Random deal value
+          response_time: Math.random() * 100, // Example: Random response time
+        });
+      });
+    };
+
+    updateMetrics();
+  }, [agents]);
 
   return (
     <div className="container mx-auto p-6">
@@ -77,14 +136,24 @@ export const Dashboard = () => {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Active Agents</h2>
           <ScrollArea className="h-[200px]">
-            {agents.filter(agent => agent.ACTIVE).map((agent) => (
-              <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
-                <span>{agent.NAME} {agent.LAST_NAME}</span>
-                <span className="text-sm text-muted-foreground">
-                  {assignments.filter(a => a.agentId === agent.ID).length} leads
-                </span>
-              </div>
-            ))}
+            {agents.filter(agent => agent.ACTIVE).map((agent) => {
+              const metrics = getAgentMetrics(agent.ID);
+              return (
+                <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
+                  <div>
+                    <span>{agent.NAME} {agent.LAST_NAME}</span>
+                    {metrics && (
+                      <div className="text-xs text-muted-foreground">
+                        Performance Score: {metrics.performance_score.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {assignments.filter(a => a.agentId === agent.ID).length} leads
+                  </span>
+                </div>
+              );
+            })}
           </ScrollArea>
         </Card>
 
