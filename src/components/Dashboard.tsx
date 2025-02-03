@@ -16,56 +16,85 @@ export const Dashboard = () => {
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
-    queryFn: () => bitrixApi.getActiveAgents(),
+    queryFn: async () => {
+      console.log('🔄 Fetching active agents from Bitrix24...');
+      const result = await bitrixApi.getActiveAgents();
+      console.log(`✅ Found ${result.length} agents in total`);
+      return result;
+    },
     refetchInterval: 30000,
   });
 
   const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
-    queryFn: () => bitrixApi.getNewLeads(),
+    queryFn: async () => {
+      console.log('🔄 Fetching new leads from Bitrix24...');
+      const result = await bitrixApi.getNewLeads();
+      console.log(`✅ Found ${result.length} unassigned leads`);
+      return result;
+    },
     refetchInterval: 10000,
   });
 
   const selectAgentByPerformance = (activeAgents: Agent[]) => {
+    console.log('📊 Selecting agent based on performance metrics...');
     const agentScores = activeAgents.map(agent => {
       const metrics = getAgentMetrics(agent.ID);
+      console.log(`Agent ${agent.NAME}: Performance Score = ${metrics?.performance_score || 0}`);
       return {
         agent,
         score: metrics?.performance_score || 0
       };
     });
 
-    return agentScores.sort((a, b) => {
+    const selectedAgent = agentScores.sort((a, b) => {
       const aWorkload = assignments.filter(assign => assign.agentId === a.agent.ID).length;
       const bWorkload = assignments.filter(assign => assign.agentId === b.agent.ID).length;
       
       const aScore = a.score - (aWorkload * 10);
       const bScore = b.score - (bWorkload * 10);
       
+      console.log(`${a.agent.NAME}: Final Score = ${aScore} (Performance: ${a.score}, Workload: ${aWorkload})`);
+      console.log(`${b.agent.NAME}: Final Score = ${bScore} (Performance: ${b.score}, Workload: ${bWorkload})`);
+      
       return bScore - aScore;
     })[0]?.agent;
+
+    console.log(`🎯 Selected agent: ${selectedAgent?.NAME || 'None'}`);
+    return selectedAgent;
   };
 
   const selectAgentByAvailability = (activeAgents: Agent[]) => {
+    console.log('⚖️ Selecting agent based on current workload...');
     const agentLeadCounts = new Map<string, number>();
-    assignments.forEach(assignment => {
-      agentLeadCounts.set(
-        assignment.agentId,
-        (agentLeadCounts.get(assignment.agentId) || 0) + 1
-      );
+    
+    // Count all assignments, including historical ones from Bitrix
+    activeAgents.forEach(agent => {
+      const currentAssignments = assignments.filter(a => a.agentId === agent.ID).length;
+      const metrics = getAgentMetrics(agent.ID);
+      const historicalLeads = metrics?.total_leads || 0;
+      const totalLeads = currentAssignments + historicalLeads;
+      agentLeadCounts.set(agent.ID, totalLeads);
+      console.log(`Agent ${agent.NAME}: Current=${currentAssignments}, Historical=${historicalLeads}, Total=${totalLeads}`);
     });
 
-    return activeAgents.sort((a, b) => 
+    const selectedAgent = activeAgents.sort((a, b) => 
       (agentLeadCounts.get(a.ID) || 0) - (agentLeadCounts.get(b.ID) || 0)
     )[0];
+
+    console.log(`🎯 Selected agent by availability: ${selectedAgent?.NAME || 'None'}`);
+    return selectedAgent;
   };
 
   useEffect(() => {
     const assignLeads = async () => {
+      console.log('\n🔄 Starting lead assignment cycle...');
       const newLeads = leads.filter(lead => !lead.ASSIGNED_BY_ID);
+      console.log(`Found ${newLeads.length} unassigned leads`);
       
       if (newLeads.length && agents.length) {
         const activeAgents = agents.filter(agent => agent.ACTIVE);
+        console.log(`${activeAgents.length} active agents available`);
         
         if (activeAgents.length > 0) {
           const selectedAgent = usePerformanceBased
@@ -75,6 +104,7 @@ export const Dashboard = () => {
           if (selectedAgent) {
             for (const lead of newLeads) {
               try {
+                console.log(`📝 Assigning lead "${lead.TITLE}" to ${selectedAgent.NAME}...`);
                 await bitrixApi.assignLead(lead.ID, selectedAgent.ID);
                 addAssignment(lead, selectedAgent);
                 
@@ -86,12 +116,13 @@ export const Dashboard = () => {
                   usePerformanceBased ? 'performance' : 'availability'
                 );
 
+                console.log('✅ Assignment completed successfully');
                 toast({
                   title: "Lead Assigned",
                   description: `${lead.TITLE} assigned to ${selectedAgent.NAME} ${selectedAgent.LAST_NAME} (${usePerformanceBased ? 'Performance' : 'Availability'} based)`,
                 });
               } catch (error) {
-                console.error('Failed to assign lead:', error);
+                console.error('❌ Failed to assign lead:', error);
                 toast({
                   title: "Assignment Failed",
                   description: "Failed to assign lead. Please try again.",
@@ -133,6 +164,10 @@ export const Dashboard = () => {
           <ScrollArea className="h-[200px]">
             {agents.filter(agent => agent.ACTIVE).map((agent) => {
               const metrics = getAgentMetrics(agent.ID);
+              const currentAssignments = assignments.filter(a => a.agentId === agent.ID).length;
+              const historicalLeads = metrics?.total_leads || 0;
+              const totalLeads = currentAssignments + historicalLeads;
+              
               return (
                 <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
                   <div>
@@ -144,7 +179,7 @@ export const Dashboard = () => {
                     )}
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {assignments.filter(a => a.agentId === agent.ID).length} leads
+                    {totalLeads} leads total
                   </span>
                 </div>
               );
@@ -163,27 +198,6 @@ export const Dashboard = () => {
           </ScrollArea>
         </Card>
       </div>
-
-      <Card className="p-6">
-        <h2 className="text-xl font-semibold mb-4">Recent Assignments</h2>
-        <ScrollArea className="h-[300px]">
-          {assignments.map((assignment, index) => (
-            <div key={index} className="p-3 border-b">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{assignment.leadName}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Assigned to: {assignment.agentName}
-                  </p>
-                </div>
-                <span className="text-sm text-muted-foreground">
-                  {new Date(assignment.timestamp).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          ))}
-        </ScrollArea>
-      </Card>
     </div>
   );
 };
