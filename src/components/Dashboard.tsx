@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { bitrixApi } from '../services/bitrixApi';
 import { useAssignmentStore } from '../stores/assignmentStore';
 import { useToast } from '@/components/ui/use-toast';
-import { recordAssignment } from '../services/database';
+import { recordAssignment, getAgentMetrics } from '../services/database';
 import { AgentList } from './AgentList';
 import { LeadList } from './LeadList';
+import { Agent } from '../types/agent';
 
 export const Dashboard = () => {
   const { toast } = useToast();
