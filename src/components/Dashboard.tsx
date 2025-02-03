@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
 import { recordAssignment, getAgentMetrics, updateAgentMetrics } from '../services/database';
+import { AgentMetrics } from '../types/metrics';
 
 export const Dashboard = () => {
   const { toast } = useToast();
@@ -16,13 +17,13 @@ export const Dashboard = () => {
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
     queryFn: () => bitrixApi.getActiveAgents(),
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
   const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
     queryFn: () => bitrixApi.getNewLeads(),
-    refetchInterval: 10000, // Refresh every 10 seconds
+    refetchInterval: 10000,
   });
 
   const selectAgentByPerformance = (activeAgents: Agent[]) => {
@@ -34,13 +35,11 @@ export const Dashboard = () => {
       };
     });
 
-    // Sort by performance score and current workload
     return agentScores.sort((a, b) => {
       const aWorkload = assignments.filter(assign => assign.agentId === a.agent.ID).length;
       const bWorkload = assignments.filter(assign => assign.agentId === b.agent.ID).length;
       
-      // Combine performance score with workload consideration
-      const aScore = a.score - (aWorkload * 10); // Penalty for each assigned lead
+      const aScore = a.score - (aWorkload * 10);
       const bScore = b.score - (bWorkload * 10);
       
       return bScore - aScore;
@@ -69,7 +68,6 @@ export const Dashboard = () => {
         const activeAgents = agents.filter(agent => agent.ACTIVE);
         
         if (activeAgents.length > 0) {
-          // Alternate between performance-based and availability-based assignment
           const selectedAgent = usePerformanceBased
             ? selectAgentByPerformance(activeAgents)
             : selectAgentByAvailability(activeAgents);
@@ -80,7 +78,6 @@ export const Dashboard = () => {
                 await bitrixApi.assignLead(lead.ID, selectedAgent.ID);
                 addAssignment(lead, selectedAgent);
                 
-                // Record assignment in SQLite
                 await recordAssignment(
                   lead.ID,
                   lead.TITLE,
@@ -104,7 +101,6 @@ export const Dashboard = () => {
             }
           }
           
-          // Toggle assignment method for next round
           setUsePerformanceBased(prev => !prev);
         }
       }
@@ -113,7 +109,6 @@ export const Dashboard = () => {
     assignLeads();
   }, [leads, agents, addAssignment, assignments, toast, usePerformanceBased]);
 
-  // Simulate updating agent metrics (in real implementation, this would come from Bitrix CRM)
   useEffect(() => {
     const updateMetrics = async () => {
       agents.forEach(agent => {
