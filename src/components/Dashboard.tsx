@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { bitrixApi, Agent, Lead } from '../services/bitrixApi';
+import { bitrixApi } from '../services/bitrixApi';
 import { useAssignmentStore } from '../stores/assignmentStore';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
-import { recordAssignment, getAgentMetrics, updateAgentMetrics, calculateAgentMetrics } from '../services/database';
+import { recordAssignment, getAgentMetrics, updateAgentMetrics, calculateAgentMetrics, exportMetricsToCSV } from '../services/database';
 
 export const Dashboard = () => {
   const { toast } = useToast();
@@ -25,7 +25,6 @@ export const Dashboard = () => {
     refetchInterval: 10000,
   });
 
-  // Fetch and update agent metrics
   useEffect(() => {
     const updateMetricsFromDeals = async () => {
       for (const agent of agents) {
@@ -37,13 +36,13 @@ export const Dashboard = () => {
           console.log(`Calculated metrics for agent ${agent.NAME}:`, metrics);
           
           await updateAgentMetrics(agent.ID, metrics);
+          await exportMetricsToCSV(agent.ID, agent.NAME, metrics);
         } catch (error) {
           console.error(`Failed to update metrics for agent ${agent.NAME}:`, error);
         }
       }
     };
 
-    // Update metrics daily
     const now = new Date();
     const lastUpdate = localStorage.getItem('lastMetricsUpdate');
     
@@ -150,13 +149,9 @@ export const Dashboard = () => {
                 <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
                   <div>
                     <span className="font-medium">{agent.NAME} {agent.LAST_NAME}</span>
-                    {metrics && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        <div>Performance Score: {metrics.performance_score.toFixed(1)}%</div>
-                        <div>Conversion Rate: {metrics.conversion_rate.toFixed(1)}%</div>
-                        <div>Avg Deal Value: ${metrics.avg_deal_value.toFixed(2)}</div>
-                      </div>
-                    )}
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Performance Score: {metrics?.performance_score.toFixed(1)}%
+                    </div>
                   </div>
                   <span className="text-sm text-muted-foreground">
                     {assignments.filter(a => a.agentId === agent.ID).length} leads

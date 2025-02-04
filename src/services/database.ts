@@ -1,8 +1,8 @@
 import { AgentMetrics } from '../types/metrics';
 
-const METRICS_KEY = 'agent_metrics';
-const ASSIGNMENTS_KEY = 'assignments';
-
+// Performance Score Calculation:
+// 60% weight on conversion rate (how many leads become deals)
+// 40% weight on average deal value (normalized to a 0-100 scale where 10000 = 100)
 export const calculateAgentMetrics = (deals: any[]) => {
   const totalDeals = deals.length;
   if (totalDeals === 0) return {
@@ -19,7 +19,10 @@ export const calculateAgentMetrics = (deals: any[]) => {
   const totalValue = deals.reduce((sum, deal) => sum + (Number(deal.OPPORTUNITY) || 0), 0);
   const avg_deal_value = totalValue / totalDeals;
 
-  const performance_score = (conversion_rate * 0.6) + ((avg_deal_value / 10000) * 0.4);
+  // Performance score calculation:
+  // conversion_rate contributes 60% of the score (0-60 points)
+  // avg_deal_value contributes 40% of the score (0-40 points, normalized where $10,000 = 40 points)
+  const performance_score = (conversion_rate * 0.6) + ((avg_deal_value / 10000) * 40);
 
   return {
     conversion_rate,
@@ -30,27 +33,39 @@ export const calculateAgentMetrics = (deals: any[]) => {
   };
 };
 
+// Store metrics in CSV format
+export const exportMetricsToCSV = async (agentId: string, agentName: string, metrics: AgentMetrics) => {
+  const csvContent = `Agent ID,Agent Name,Performance Score,Conversion Rate,Avg Deal Value,Last Updated\n${agentId},${agentName},${metrics.performance_score},${metrics.conversion_rate},${metrics.avg_deal_value},${metrics.last_updated}`;
+  
+  // Create a Blob with the CSV content
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  
+  // Create a download link
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `agent_metrics_${agentId}.csv`;
+  
+  // Trigger download
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// For compatibility with existing code, maintain a cache of metrics in memory
+const metricsCache = new Map<string, AgentMetrics>();
+
 export const updateAgentMetrics = async (agentId: string, metrics: AgentMetrics) => {
-  const allMetrics = JSON.parse(localStorage.getItem(METRICS_KEY) || '{}');
-  allMetrics[agentId] = metrics;
-  localStorage.setItem(METRICS_KEY, JSON.stringify(allMetrics));
+  metricsCache.set(agentId, metrics);
 };
 
 export const getAgentMetrics = (agentId: string): AgentMetrics => {
-  const allMetrics = JSON.parse(localStorage.getItem(METRICS_KEY) || '{}');
-  const metrics = allMetrics[agentId];
-  
-  if (!metrics) {
-    return {
-      conversion_rate: 0,
-      avg_deal_value: 0,
-      response_time: 0,
-      performance_score: 0,
-      last_updated: new Date().toISOString()
-    };
-  }
-  
-  return metrics as AgentMetrics;
+  return metricsCache.get(agentId) || {
+    conversion_rate: 0,
+    avg_deal_value: 0,
+    response_time: 0,
+    performance_score: 0,
+    last_updated: new Date().toISOString()
+  };
 };
 
 export const recordAssignment = async (
@@ -60,14 +75,28 @@ export const recordAssignment = async (
   agentName: string, 
   method: string
 ) => {
-  const assignments = JSON.parse(localStorage.getItem(ASSIGNMENTS_KEY) || '[]');
-  assignments.push({
+  const assignment = {
     lead_id: leadId,
     lead_title: leadTitle,
     agent_id: agentId,
     agent_name: agentName,
     method,
     timestamp: new Date().toISOString()
-  });
-  localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
+  };
+
+  // Create CSV content for the assignment
+  const csvContent = `Lead ID,Lead Title,Agent ID,Agent Name,Method,Timestamp\n${leadId},"${leadTitle}",${agentId},"${agentName}",${method},${assignment.timestamp}`;
+  
+  // Create a Blob with the CSV content
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  
+  // Create a download link
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `assignment_${leadId}.csv`;
+  
+  // Trigger download
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
