@@ -1,8 +1,5 @@
 import { AgentMetrics } from '../types/metrics';
 
-// Performance Score Calculation:
-// 60% weight on conversion rate (how many leads become deals)
-// 40% weight on average deal value (normalized to a 0-100 scale where 10000 = 100)
 export const calculateAgentMetrics = (deals: any[]) => {
   const totalDeals = deals.length;
   if (totalDeals === 0) return {
@@ -22,7 +19,8 @@ export const calculateAgentMetrics = (deals: any[]) => {
   // Performance score calculation:
   // conversion_rate contributes 60% of the score (0-60 points)
   // avg_deal_value contributes 40% of the score (0-40 points, normalized where $10,000 = 40 points)
-  const performance_score = (conversion_rate * 0.6) + ((avg_deal_value / 10000) * 40);
+  const normalizedDealValue = Math.min((avg_deal_value / 10000) * 40, 40);
+  const performance_score = (conversion_rate * 0.6) + normalizedDealValue;
 
   return {
     conversion_rate,

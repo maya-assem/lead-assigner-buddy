@@ -12,6 +12,7 @@ export const Dashboard = () => {
   const addAssignment = useAssignmentStore((state) => state.addAssignment);
   const assignments = useAssignmentStore((state) => state.assignments);
   const [usePerformanceBased, setUsePerformanceBased] = useState(false);
+  const [agentDeals, setAgentDeals] = useState<{ [key: string]: number }>({});
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
@@ -26,11 +27,13 @@ export const Dashboard = () => {
   });
 
   useEffect(() => {
-    const updateMetricsFromDeals = async () => {
+    const fetchAgentDeals = async () => {
+      const dealsMap: { [key: string]: number } = {};
+      
       for (const agent of agents) {
         try {
           const deals = await bitrixApi.getAgentDeals(agent.ID, 10);
-          console.log(`Fetched ${deals.length} deals for agent ${agent.NAME}`);
+          dealsMap[agent.ID] = deals.length;
           
           const metrics = calculateAgentMetrics(deals);
           console.log(`Calculated metrics for agent ${agent.NAME}:`, metrics);
@@ -38,17 +41,16 @@ export const Dashboard = () => {
           await updateAgentMetrics(agent.ID, metrics);
           await exportMetricsToCSV(agent.ID, agent.NAME, metrics);
         } catch (error) {
-          console.error(`Failed to update metrics for agent ${agent.NAME}:`, error);
+          console.error(`Failed to fetch deals for agent ${agent.NAME}:`, error);
+          dealsMap[agent.ID] = 0;
         }
       }
+      
+      setAgentDeals(dealsMap);
     };
 
-    const now = new Date();
-    const lastUpdate = localStorage.getItem('lastMetricsUpdate');
-    
-    if (!lastUpdate || new Date(lastUpdate).getDate() !== now.getDate()) {
-      updateMetricsFromDeals();
-      localStorage.setItem('lastMetricsUpdate', now.toISOString());
+    if (agents.length > 0) {
+      fetchAgentDeals();
     }
   }, [agents]);
 
@@ -145,16 +147,17 @@ export const Dashboard = () => {
           <ScrollArea className="h-[200px]">
             {agents.filter(agent => agent.ACTIVE).map((agent) => {
               const metrics = getAgentMetrics(agent.ID);
+              const dealCount = agentDeals[agent.ID] || 0;
               return (
                 <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
                   <div>
                     <span className="font-medium">{agent.NAME} {agent.LAST_NAME}</span>
                     <div className="text-xs text-muted-foreground mt-1">
-                      Performance Score: {metrics?.performance_score.toFixed(1)}%
+                      Performance Score: {metrics?.performance_score ? `${metrics.performance_score.toFixed(1)}%` : '0%'}
                     </div>
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {assignments.filter(a => a.agentId === agent.ID).length} leads
+                    {dealCount} deals
                   </span>
                 </div>
               );
