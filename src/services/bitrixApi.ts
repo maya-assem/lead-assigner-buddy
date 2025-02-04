@@ -9,6 +9,16 @@ export interface Lead {
   DATE_CREATE: string;
 }
 
+export interface Deal {
+  ID: string;
+  TITLE: string;
+  ASSIGNED_BY_ID: string;
+  OPPORTUNITY: number;
+  CLOSED: 'Y' | 'N';
+  DATE_CREATE: string;
+  STAGE_ID: string;
+}
+
 export interface Agent {
   ID: string;
   NAME: string;
@@ -40,6 +50,16 @@ class BitrixAPI {
   async getActiveAgents() {
     const result = await this.request('user.get');
     return result.result as Agent[];
+  }
+
+  async getAgentDeals(agentId: string, limit: number = 10) {
+    const result = await this.request('crm.deal.list', 'GET', {
+      filter: { ASSIGNED_BY_ID: agentId },
+      order: { DATE_CREATE: 'DESC' },
+      select: ['*'],
+      limit
+    });
+    return result.result as Deal[];
   }
 
   async assignLead(leadId: string, agentId: string) {

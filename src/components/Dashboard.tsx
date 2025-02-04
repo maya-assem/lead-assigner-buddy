@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { bitrixApi, Lead, Agent } from '../services/bitrixApi';
+import { bitrixApi, Lead, Agent, Deal } from '../services/bitrixApi';
 import { useAssignmentStore } from '../stores/assignmentStore';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
-import { recordAssignment, getAgentMetrics, updateAgentMetrics } from '../services/database';
-import { AgentMetrics } from '../types/metrics';
+import { recordAssignment, getAgentMetrics, updateAgentMetrics, calculateAgentMetrics } from '../services/database';
 
 export const Dashboard = () => {
   const { toast } = useToast();
@@ -25,6 +24,36 @@ export const Dashboard = () => {
     queryFn: () => bitrixApi.getNewLeads(),
     refetchInterval: 10000,
   });
+
+  // Fetch and update agent metrics
+  useEffect(() => {
+    const updateMetricsFromDeals = async () => {
+      for (const agent of agents) {
+        try {
+          // Fetch last 10 deals for each agent
+          const deals = await bitrixApi.getAgentDeals(agent.ID, 10);
+          console.log(`Fetched ${deals.length} deals for agent ${agent.NAME}`);
+          
+          // Calculate metrics based on real deal data
+          const metrics = calculateAgentMetrics(deals);
+          console.log(`Calculated metrics for agent ${agent.NAME}:`, metrics);
+          
+          // Update stored metrics
+          await updateAgentMetrics(agent.ID, metrics);
+        } catch (error) {
+          console.error(`Failed to update metrics for agent ${agent.NAME}:`, error);
+        }
+      }
+    };
+
+    // Update metrics daily and on component mount
+    const lastUpdate = localStorage.getItem('lastMetricsUpdate');
+    const now = new Date().toISOString();
+    if (!lastUpdate || new Date(lastUpdate).getDate() !== new Date(now).getDate()) {
+      updateMetricsFromDeals();
+      localStorage.setItem('lastMetricsUpdate', now);
+    }
+  }, [agents]);
 
   const selectAgentByPerformance = (activeAgents: Agent[]) => {
     const agentScores = activeAgents.map(agent => {
@@ -109,20 +138,6 @@ export const Dashboard = () => {
     assignLeads();
   }, [leads, agents, addAssignment, assignments, toast, usePerformanceBased]);
 
-  useEffect(() => {
-    const updateMetrics = async () => {
-      agents.forEach(agent => {
-        updateAgentMetrics(agent.ID, {
-          conversion_rate: Math.random() * 100, // Example: Random conversion rate
-          avg_deal_value: Math.random() * 10000, // Example: Random deal value
-          response_time: Math.random() * 100, // Example: Random response time
-        });
-      });
-    };
-
-    updateMetrics();
-  }, [agents]);
-
   return (
     <div className="container mx-auto p-6">
       <h1 className="text-3xl font-bold mb-8">Lead Assignment Dashboard</h1>
@@ -139,7 +154,9 @@ export const Dashboard = () => {
                     <span>{agent.NAME} {agent.LAST_NAME}</span>
                     {metrics && (
                       <div className="text-xs text-muted-foreground">
-                        Performance Score: {metrics.performance_score.toFixed(2)}
+                        <div>Performance Score: {metrics.performance_score.toFixed(2)}</div>
+                        <div>Conversion Rate: {metrics.conversion_rate.toFixed(1)}%</div>
+                        <div>Avg Deal Value: ${metrics.avg_deal_value.toFixed(2)}</div>
                       </div>
                     )}
                   </div>
