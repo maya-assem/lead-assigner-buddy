@@ -7,6 +7,8 @@ export interface Lead {
   TITLE: string;
   ASSIGNED_BY_ID: string;
   DATE_CREATE: string;
+  STAGE_ID: string;
+  STAGE_NAME?: string;
 }
 
 export interface Deal {
@@ -43,8 +45,22 @@ class BitrixAPI {
   }
 
   async getNewLeads() {
-    const result = await this.request('crm.lead.list');
-    return result.result as Lead[];
+    const result = await this.request('crm.lead.list', 'GET', {
+      filter: { ASSIGNED_BY_ID: '' },
+      select: ['*', 'STAGE_ID']
+    });
+    
+    // Fetch stage names
+    const stagesResult = await this.request('crm.status.list', 'GET', {
+      filter: { ENTITY_ID: 'STATUS' }
+    });
+    
+    const stages = new Map(stagesResult.result.map((stage: any) => [stage.STATUS_ID, stage.NAME]));
+    
+    return result.result.map((lead: any) => ({
+      ...lead,
+      STAGE_NAME: stages.get(lead.STAGE_ID) || lead.STAGE_ID
+    })) as Lead[];
   }
 
   async getActiveAgents() {

@@ -1,41 +1,23 @@
-import { Deal } from './bitrixApi';
+import Database from 'better-sqlite3';
+import { AgentMetrics } from '../types/metrics';
 
-interface AgentMetrics {
-  conversion_rate: number;
-  avg_deal_value: number;
-  response_time: number;
-  performance_score: number;
-  last_updated: string;
-}
+const db = new Database('crm.db');
 
-const metricsStore = new Map<string, AgentMetrics>();
+// Initialize tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_metrics (
+    agent_id TEXT PRIMARY KEY,
+    conversion_rate REAL,
+    avg_deal_value REAL,
+    response_time REAL,
+    performance_score REAL,
+    last_updated TEXT
+  );
+`);
 
-export const calculateAgentMetrics = (deals: Deal[]): AgentMetrics => {
-  const closedDeals = deals.filter(deal => deal.CLOSED === 'Y');
+export const calculateAgentMetrics = (deals: any[]) => {
   const totalDeals = deals.length;
-  
-  // Calculate conversion rate (closed deals / total deals)
-  const conversion_rate = totalDeals > 0 ? (closedDeals.length / totalDeals) * 100 : 0;
-  
-  // Calculate average deal value
-  const avg_deal_value = closedDeals.length > 0 
-    ? closedDeals.reduce((sum, deal) => sum + (deal.OPPORTUNITY || 0), 0) / closedDeals.length 
-    : 0;
-  
-  // Calculate performance score based on conversion rate and average deal value
-  const performance_score = (conversion_rate * 0.6) + (Math.min(avg_deal_value / 10000, 100) * 0.4);
-
-  return {
-    conversion_rate,
-    avg_deal_value,
-    response_time: Math.random() * 100, // This would need real data from Bitrix
-    performance_score,
-    last_updated: new Date().toISOString()
-  };
-};
-
-export const updateAgentMetrics = async (agentId: string, metrics: Partial<AgentMetrics>) => {
-  const currentMetrics = metricsStore.get(agentId) || {
+  if (totalDeals === 0) return {
     conversion_rate: 0,
     avg_deal_value: 0,
     response_time: 0,
@@ -43,30 +25,47 @@ export const updateAgentMetrics = async (agentId: string, metrics: Partial<Agent
     last_updated: new Date().toISOString()
   };
 
-  metricsStore.set(agentId, {
-    ...currentMetrics,
-    ...metrics,
+  const closedDeals = deals.filter(deal => deal.CLOSED === 'Y');
+  const conversion_rate = (closedDeals.length / totalDeals) * 100;
+  
+  const totalValue = deals.reduce((sum, deal) => sum + (Number(deal.OPPORTUNITY) || 0), 0);
+  const avg_deal_value = totalValue / totalDeals;
+
+  // Calculate performance score (example formula)
+  const performance_score = (conversion_rate * 0.6) + ((avg_deal_value / 10000) * 0.4);
+
+  return {
+    conversion_rate,
+    avg_deal_value,
+    response_time: 0, // This could be calculated if we have timestamp data
+    performance_score,
     last_updated: new Date().toISOString()
-  });
+  };
 };
 
-export const getAgentMetrics = (agentId: string): AgentMetrics | undefined => {
-  return metricsStore.get(agentId);
-};
+export const updateAgentMetrics = async (agentId: string, metrics: AgentMetrics) => {
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO agent_metrics 
+    (agent_id, conversion_rate, avg_deal_value, response_time, performance_score, last_updated)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
 
-export const recordAssignment = async (
-  leadId: string,
-  leadName: string,
-  agentId: string,
-  agentName: string,
-  assignmentType: string
-) => {
-  console.log('Assignment recorded:', {
-    leadId,
-    leadName,
+  stmt.run(
     agentId,
-    agentName,
-    assignmentType,
-    timestamp: new Date().toISOString()
-  });
+    metrics.conversion_rate,
+    metrics.avg_deal_value,
+    metrics.response_time,
+    metrics.performance_score,
+    metrics.last_updated
+  );
+};
+
+export const getAgentMetrics = (agentId: string): AgentMetrics | null => {
+  const stmt = db.prepare('SELECT * FROM agent_metrics WHERE agent_id = ?');
+  const result = stmt.get(agentId);
+  return result || null;
+};
+
+export const recordAssignment = async (leadId: string, leadTitle: string, agentId: string, agentName: string, method: string) => {
+  // Implementation for recording assignment in the database
 };

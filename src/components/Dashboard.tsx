@@ -30,15 +30,12 @@ export const Dashboard = () => {
     const updateMetricsFromDeals = async () => {
       for (const agent of agents) {
         try {
-          // Fetch last 10 deals for each agent
           const deals = await bitrixApi.getAgentDeals(agent.ID, 10);
           console.log(`Fetched ${deals.length} deals for agent ${agent.NAME}`);
           
-          // Calculate metrics based on real deal data
           const metrics = calculateAgentMetrics(deals);
           console.log(`Calculated metrics for agent ${agent.NAME}:`, metrics);
           
-          // Update stored metrics
           await updateAgentMetrics(agent.ID, metrics);
         } catch (error) {
           console.error(`Failed to update metrics for agent ${agent.NAME}:`, error);
@@ -46,12 +43,12 @@ export const Dashboard = () => {
       }
     };
 
-    // Update metrics daily and on component mount
-    const lastUpdate = localStorage.getItem('lastMetricsUpdate');
-    const now = new Date().toISOString();
-    if (!lastUpdate || new Date(lastUpdate).getDate() !== new Date(now).getDate()) {
+    // Update metrics daily
+    const now = new Date();
+    const lastUpdate = db.prepare('SELECT last_updated FROM agent_metrics LIMIT 1').get();
+    
+    if (!lastUpdate || new Date(lastUpdate.last_updated).getDate() !== now.getDate()) {
       updateMetricsFromDeals();
-      localStorage.setItem('lastMetricsUpdate', now);
     }
   }, [agents]);
 
@@ -151,10 +148,10 @@ export const Dashboard = () => {
               return (
                 <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
                   <div>
-                    <span>{agent.NAME} {agent.LAST_NAME}</span>
+                    <span className="font-medium">{agent.NAME} {agent.LAST_NAME}</span>
                     {metrics && (
-                      <div className="text-xs text-muted-foreground">
-                        <div>Performance Score: {metrics.performance_score.toFixed(2)}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        <div>Performance Score: {metrics.performance_score.toFixed(1)}%</div>
                         <div>Conversion Rate: {metrics.conversion_rate.toFixed(1)}%</div>
                         <div>Avg Deal Value: ${metrics.avg_deal_value.toFixed(2)}</div>
                       </div>
@@ -174,7 +171,12 @@ export const Dashboard = () => {
           <ScrollArea className="h-[200px]">
             {leads.filter(lead => !lead.ASSIGNED_BY_ID).map((lead) => (
               <div key={lead.ID} className="p-2 border-b">
-                <span>{lead.TITLE}</span>
+                <div className="flex flex-col">
+                  <span className="font-medium">{lead.TITLE}</span>
+                  <span className="text-xs text-muted-foreground mt-1">
+                    Stage: {lead.STAGE_NAME || lead.STAGE_ID}
+                  </span>
+                </div>
               </div>
             ))}
           </ScrollArea>
