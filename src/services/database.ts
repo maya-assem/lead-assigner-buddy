@@ -60,12 +60,41 @@ export const updateAgentMetrics = async (agentId: string, metrics: AgentMetrics)
   );
 };
 
-export const getAgentMetrics = (agentId: string): AgentMetrics | null => {
+export const getAgentMetrics = (agentId: string): AgentMetrics => {
   const stmt = db.prepare('SELECT * FROM agent_metrics WHERE agent_id = ?');
   const result = stmt.get(agentId);
-  return result || null;
+  
+  if (!result) {
+    return {
+      conversion_rate: 0,
+      avg_deal_value: 0,
+      response_time: 0,
+      performance_score: 0,
+      last_updated: new Date().toISOString()
+    };
+  }
+  
+  return result as AgentMetrics;
 };
 
-export const recordAssignment = async (leadId: string, leadTitle: string, agentId: string, agentName: string, method: string) => {
-  // Implementation for recording assignment in the database
+export const recordAssignment = async (
+  leadId: string, 
+  leadTitle: string, 
+  agentId: string, 
+  agentName: string, 
+  method: string
+) => {
+  const stmt = db.prepare(`
+    INSERT INTO assignments (lead_id, lead_title, agent_id, agent_name, method, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    leadId,
+    leadTitle,
+    agentId,
+    agentName,
+    method,
+    new Date().toISOString()
+  );
 };

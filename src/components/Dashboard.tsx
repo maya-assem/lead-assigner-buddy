@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { bitrixApi, Lead, Agent, Deal } from '../services/bitrixApi';
+import { bitrixApi } from '../services/bitrixApi';
 import { useAssignmentStore } from '../stores/assignmentStore';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -45,10 +45,11 @@ export const Dashboard = () => {
 
     // Update metrics daily
     const now = new Date();
-    const lastUpdate = db.prepare('SELECT last_updated FROM agent_metrics LIMIT 1').get();
+    const lastUpdate = localStorage.getItem('lastMetricsUpdate');
     
-    if (!lastUpdate || new Date(lastUpdate.last_updated).getDate() !== now.getDate()) {
+    if (!lastUpdate || new Date(lastUpdate).getDate() !== now.getDate()) {
       updateMetricsFromDeals();
+      localStorage.setItem('lastMetricsUpdate', now.toISOString());
     }
   }, [agents]);
 
