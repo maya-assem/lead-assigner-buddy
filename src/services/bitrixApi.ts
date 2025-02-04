@@ -32,9 +32,12 @@ export interface Agent {
 class BitrixAPI {
   private async request(endpoint: string, method: string = 'GET', data?: any) {
     try {
+      const url = `${BASE_URL}/${endpoint}`.replace(/([^:]\/)\/+/g, "$1"); // Remove any double slashes
+      console.log('Making request to:', url); // Debug log
+      
       const response = await axios({
         method,
-        url: `${BASE_URL}/${endpoint}`,
+        url,
         data
       });
       return response.data;
