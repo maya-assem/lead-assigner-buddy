@@ -10,54 +10,65 @@ export const calculateAgentMetrics = (deals: any[]) => {
     last_updated: new Date().toISOString()
   };
 
-  const closedDeals = deals.filter(deal => deal.CLOSED === 'Y');
-  const conversion_rate = (closedDeals.length / totalDeals) * 100;
+  const wonDeals = deals.filter(deal => deal.STAGE_ID === 'WON' || deal.STAGE_ID === 'CLOSED_WON');
+  const performance_score = (wonDeals.length / totalDeals) * 100;
   
   const totalValue = deals.reduce((sum, deal) => sum + (Number(deal.OPPORTUNITY) || 0), 0);
   const avg_deal_value = totalValue / totalDeals;
 
-  // Performance score calculation:
-  // conversion_rate contributes 60% of the score (0-60 points)
-  // avg_deal_value contributes 40% of the score (0-40 points, normalized where $10,000 = 40 points)
-  const normalizedDealValue = Math.min((avg_deal_value / 10000) * 40, 40);
-  const performance_score = (conversion_rate * 0.6) + normalizedDealValue;
-
-  return {
-    conversion_rate,
+  const metrics = {
+    conversion_rate: (wonDeals.length / totalDeals) * 100,
     avg_deal_value,
     response_time: 0,
     performance_score,
     last_updated: new Date().toISOString()
   };
+
+  return metrics;
 };
 
-// Store metrics in CSV format
-export const exportMetricsToCSV = async (agentId: string, agentName: string, metrics: AgentMetrics) => {
-  const csvContent = `Agent ID,Agent Name,Performance Score,Conversion Rate,Avg Deal Value,Last Updated\n${agentId},${agentName},${metrics.performance_score},${metrics.conversion_rate},${metrics.avg_deal_value},${metrics.last_updated}`;
-  
-  // Create a Blob with the CSV content
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  
-  // Create a download link
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `agent_metrics_${agentId}.csv`;
-  
-  // Trigger download
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+// Store metrics in localStorage
+const METRICS_STORAGE_KEY = 'agent_metrics';
+
+export const updateAgentMetrics = async (agentId: string, metrics: AgentMetrics) => {
+  try {
+    const storedMetrics = localStorage.getItem(METRICS_STORAGE_KEY);
+    const allMetrics = storedMetrics ? JSON.parse(storedMetrics) : {};
+    
+    allMetrics[agentId] = metrics;
+    localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(allMetrics));
+    
+    // Also update the in-memory cache for immediate access
+    metricsCache.set(agentId, metrics);
+  } catch (error) {
+    console.error('Failed to store metrics in localStorage:', error);
+  }
 };
 
 // For compatibility with existing code, maintain a cache of metrics in memory
 const metricsCache = new Map<string, AgentMetrics>();
 
-export const updateAgentMetrics = async (agentId: string, metrics: AgentMetrics) => {
-  metricsCache.set(agentId, metrics);
-};
-
 export const getAgentMetrics = (agentId: string): AgentMetrics => {
-  return metricsCache.get(agentId) || {
+  // First try to get from cache
+  const cachedMetrics = metricsCache.get(agentId);
+  if (cachedMetrics) return cachedMetrics;
+
+  // If not in cache, try to get from localStorage
+  try {
+    const storedMetrics = localStorage.getItem(METRICS_STORAGE_KEY);
+    if (storedMetrics) {
+      const allMetrics = JSON.parse(storedMetrics);
+      if (allMetrics[agentId]) {
+        metricsCache.set(agentId, allMetrics[agentId]);
+        return allMetrics[agentId];
+      }
+    }
+  } catch (error) {
+    console.error('Failed to retrieve metrics from localStorage:', error);
+  }
+
+  // Return default metrics if nothing is found
+  return {
     conversion_rate: 0,
     avg_deal_value: 0,
     response_time: 0,
@@ -82,19 +93,14 @@ export const recordAssignment = async (
     timestamp: new Date().toISOString()
   };
 
-  // Create CSV content for the assignment
-  const csvContent = `Lead ID,Lead Title,Agent ID,Agent Name,Method,Timestamp\n${leadId},"${leadTitle}",${agentId},"${agentName}",${method},${assignment.timestamp}`;
-  
-  // Create a Blob with the CSV content
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  
-  // Create a download link
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `assignment_${leadId}.csv`;
-  
-  // Trigger download
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  try {
+    const ASSIGNMENTS_STORAGE_KEY = 'lead_assignments';
+    const storedAssignments = localStorage.getItem(ASSIGNMENTS_STORAGE_KEY);
+    const assignments = storedAssignments ? JSON.parse(storedAssignments) : [];
+    
+    assignments.push(assignment);
+    localStorage.setItem(ASSIGNMENTS_STORAGE_KEY, JSON.stringify(assignments));
+  } catch (error) {
+    console.error('Failed to store assignment in localStorage:', error);
+  }
 };

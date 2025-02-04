@@ -5,7 +5,7 @@ import { useAssignmentStore } from '../stores/assignmentStore';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
-import { recordAssignment, getAgentMetrics, updateAgentMetrics, calculateAgentMetrics, exportMetricsToCSV } from '../services/database';
+import { recordAssignment, getAgentMetrics, updateAgentMetrics, calculateAgentMetrics } from '../services/database';
 
 export const Dashboard = () => {
   const { toast } = useToast();
@@ -39,7 +39,6 @@ export const Dashboard = () => {
           console.log(`Calculated metrics for agent ${agent.NAME}:`, metrics);
           
           await updateAgentMetrics(agent.ID, metrics);
-          await exportMetricsToCSV(agent.ID, agent.NAME, metrics);
         } catch (error) {
           console.error(`Failed to fetch deals for agent ${agent.NAME}:`, error);
           dealsMap[agent.ID] = 0;
