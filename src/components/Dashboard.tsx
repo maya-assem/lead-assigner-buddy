@@ -1,18 +1,17 @@
-import { useEffect, useState } from 'react';
+
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { bitrixApi, Agent } from '../services/bitrixApi';
 import { useAssignmentStore } from '../stores/assignmentStore';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
-import { recordAssignment, getAgentMetrics, updateAgentMetrics, calculateAgentMetrics } from '../services/database';
+import { recordAssignment, getAgentMetrics, updateAgentMetrics, calculateAgentMetrics, getAssignmentCount } from '../services/database';
 
 export const Dashboard = () => {
   const { toast } = useToast();
   const addAssignment = useAssignmentStore((state) => state.addAssignment);
   const assignments = useAssignmentStore((state) => state.assignments);
-  const [usePerformanceBased, setUsePerformanceBased] = useState(false);
-  const [agentDeals, setAgentDeals] = useState<{ [key: string]: number }>({});
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
@@ -27,63 +26,26 @@ export const Dashboard = () => {
   });
 
   useEffect(() => {
-    const fetchAgentDeals = async () => {
-      const dealsMap: { [key: string]: number } = {};
-      
+    const updateMetrics = async () => {
       for (const agent of agents) {
         try {
           const deals = await bitrixApi.getAgentDeals(agent.ID, 10);
-          dealsMap[agent.ID] = deals.length;
-          
           const metrics = calculateAgentMetrics(deals);
-          console.log(`Calculated metrics for agent ${agent.NAME}:`, metrics);
-          
           await updateAgentMetrics(agent.ID, metrics);
         } catch (error) {
           console.error(`Failed to fetch deals for agent ${agent.NAME}:`, error);
-          dealsMap[agent.ID] = 0;
         }
       }
-      
-      setAgentDeals(dealsMap);
     };
 
     if (agents.length > 0) {
-      fetchAgentDeals();
+      updateMetrics();
     }
   }, [agents]);
 
-  const selectAgentByPerformance = (activeAgents: Agent[]) => {
-    const agentScores = activeAgents.map(agent => {
-      const metrics = getAgentMetrics(agent.ID);
-      return {
-        agent,
-        score: metrics?.performance_score || 0
-      };
-    });
-
-    return agentScores.sort((a, b) => {
-      const aWorkload = assignments.filter(assign => assign.agentId === a.agent.ID).length;
-      const bWorkload = assignments.filter(assign => assign.agentId === b.agent.ID).length;
-      
-      const aScore = a.score - (aWorkload * 10);
-      const bScore = b.score - (bWorkload * 10);
-      
-      return bScore - aScore;
-    })[0]?.agent;
-  };
-
   const selectAgentByAvailability = (activeAgents: Agent[]) => {
-    const agentLeadCounts = new Map<string, number>();
-    assignments.forEach(assignment => {
-      agentLeadCounts.set(
-        assignment.agentId,
-        (agentLeadCounts.get(assignment.agentId) || 0) + 1
-      );
-    });
-
     return activeAgents.sort((a, b) => 
-      (agentLeadCounts.get(a.ID) || 0) - (agentLeadCounts.get(b.ID) || 0)
+      getAssignmentCount(a.ID) - getAssignmentCount(b.ID)
     )[0];
   };
 
@@ -95,9 +57,7 @@ export const Dashboard = () => {
         const activeAgents = agents.filter(agent => agent.ACTIVE);
         
         if (activeAgents.length > 0) {
-          const selectedAgent = usePerformanceBased
-            ? selectAgentByPerformance(activeAgents)
-            : selectAgentByAvailability(activeAgents);
+          const selectedAgent = selectAgentByAvailability(activeAgents);
 
           if (selectedAgent) {
             for (const lead of newLeads) {
@@ -109,13 +69,12 @@ export const Dashboard = () => {
                   lead.ID,
                   lead.TITLE,
                   selectedAgent.ID,
-                  `${selectedAgent.NAME} ${selectedAgent.LAST_NAME}`,
-                  usePerformanceBased ? 'performance' : 'availability'
+                  `${selectedAgent.NAME} ${selectedAgent.LAST_NAME}`
                 );
 
                 toast({
                   title: "Lead Assigned",
-                  description: `${lead.TITLE} assigned to ${selectedAgent.NAME} ${selectedAgent.LAST_NAME} (${usePerformanceBased ? 'Performance' : 'Availability'} based)`,
+                  description: `${lead.TITLE} assigned to ${selectedAgent.NAME} ${selectedAgent.LAST_NAME} (based on current workload)`,
                 });
               } catch (error) {
                 console.error('Failed to assign lead:', error);
@@ -127,14 +86,12 @@ export const Dashboard = () => {
               }
             }
           }
-          
-          setUsePerformanceBased(prev => !prev);
         }
       }
     };
 
     assignLeads();
-  }, [leads, agents, addAssignment, assignments, toast, usePerformanceBased]);
+  }, [leads, agents, addAssignment, assignments, toast]);
 
   return (
     <div className="container mx-auto p-6">
@@ -146,7 +103,7 @@ export const Dashboard = () => {
           <ScrollArea className="h-[200px]">
             {agents.filter(agent => agent.ACTIVE).map((agent) => {
               const metrics = getAgentMetrics(agent.ID);
-              const dealCount = agentDeals[agent.ID] || 0;
+              const assignmentCount = getAssignmentCount(agent.ID);
               return (
                 <div key={agent.ID} className="flex items-center justify-between p-2 border-b">
                   <div>
@@ -156,7 +113,7 @@ export const Dashboard = () => {
                     </div>
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {dealCount} deals
+                    {assignmentCount} leads assigned
                   </span>
                 </div>
               );
